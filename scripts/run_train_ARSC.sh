@@ -1,0 +1,28 @@
+#!/bin/sh
+CUDA_VISIBLE_DEVICES=0 python3 -u ./train.py \
+    --train_data ARSC_train \
+    --test_data books.t2 --test_data books.t4 --test_data books.t5 \
+    --test_data dvd.t2 --test_data dvd.t4 --test_data dvd.t5 \
+    --test_data electronics.t2 --test_data electronics.t4 --test_data electronics.t5 \
+    --test_data kitchen_housewares.t2 --test_data kitchen_housewares.t4 --test_data kitchen_housewares.t5 \
+    -N 2 \
+    -K 5 \
+    -Q 5 \
+    --encoder bert-base \
+    --model att-induction \
+    --optim adamw \
+    --train_episodes 70000 \
+    --val_steps 1000 \
+    --max_length 512 \
+    --hidden_size 768 \
+    --induction_iters 3 \
+    --n_heads 4 \
+    --dropout 0.4 \
+    -H 130 \
+    -B 1 \
+    --grad_steps 32 \
+    --lr 5e-5 \
+    --warmup 0.06 \
+    --weight_decay 0.01 \
+    --pretrain_path ../resource/pretrain/ \
+    --output_path ../log/ &
