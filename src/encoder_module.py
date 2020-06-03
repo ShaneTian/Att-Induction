@@ -6,23 +6,40 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from transformers import BertModel, BertTokenizer, XLNetModel, XLNetTokenizer, AlbertModel, AlbertTokenizer, RobertaModel, RobertaTokenizer
+from transformers import BertModel, BertTokenizer
 
 
 class AttBiLSTMEncoder(nn.Module):
     """Encoder indices of sentences by Self-Attention Bi-LSTM."""
-    def __init__(self, pretrain_path, max_length, hidden_size, att_dim):
+    def __init__(self, pretrain_path, max_length, hidden_size, att_dim, is_zh=False):
         super(AttBiLSTMEncoder, self).__init__()
-        self.token2idx = json.load(open(os.path.join(
-            pretrain_path,
-            "att-bi-lstm",
-            "token2idx.json"
-        ), "r"))
-        word_vec = torch.from_numpy(np.load(os.path.join(
-            pretrain_path,
-            "att-bi-lstm",
-            "word_vec.npy"
-        )))
+        self.is_zh = is_zh
+        if not self.is_zh:
+            # English
+            self.token2idx = json.load(open(os.path.join(
+                pretrain_path,
+                "att-bi-lstm",
+                "token2idx.json"
+            ), "r"))
+            word_vec = torch.from_numpy(np.load(os.path.join(
+                pretrain_path,
+                "att-bi-lstm",
+                "word_vec.npy"
+            )))
+        else:
+            # Chinese
+            self.token2idx = json.load(open(os.path.join(
+                pretrain_path,
+                "att-bi-lstm-zh",
+                "token2idx.json"
+            ), "r"))
+            word_vec = torch.from_numpy(np.load(os.path.join(
+                pretrain_path,
+                "att-bi-lstm-zh",
+                "word_vec.npy"
+            )))
+            import pkuseg
+            self.seg = pkuseg.pkuseg()
         self.word_count, self.word_vec_dim = word_vec.shape[0], word_vec.shape[1]
 
         # Unknown, Blank
@@ -79,10 +96,18 @@ class AttBiLSTMEncoder(nn.Module):
             ids: list, [max_length]
             length: list, [max_length]"""
         ids = []
-        for char in text.strip().split():
-            char = char.lower()
-            char_idx = self.token2idx[char] if char in self.token2idx else self.unk_idx
-            ids.append(char_idx)
+        if not self.is_zh:
+            # English
+            for char in text.strip().split():
+                char = char.lower()
+                char_idx = self.token2idx[char] if char in self.token2idx else self.unk_idx
+                ids.append(char_idx)
+        else:
+            # Chinese
+            for token in self.seg.cut(text.strip()):
+                token_idx = self.token2idx[token] if token in self.token2idx else self.unk_idx
+                ids.append(token_idx)
+
         # 'length' is the true length of ids, each element is equal true length
         # eg. text = "Hello World"  ==>  length = [2] * max_length
         length = self.max_length * [min(len(ids), self.max_length)]
@@ -131,131 +156,6 @@ class BERTEncoder(nn.Module):
             mask: list, [max_length]"""
         ids = self.bert_tokenizer.encode(text, add_special_tokens=True,
                                          max_length=self.max_length)
-        # attention mask: 1 for tokens that are NOT MASKED, 0 for MASKED tokens.
-        mask = [1] * len(ids)
-        # Padding
-        while len(ids) < self.max_length:
-            ids.append(0)
-            mask.append(0)
-        # truncation
-        ids = ids[:self.max_length]
-        mask = mask[:self.max_length]
-        return ids, mask
-
-
-class XLNetEncoder(nn.Module):
-    """Encoder indices of sentences in XLNet last hidden states."""
-    def __init__(self, model_shortcut_name, pretrain_path, max_length):
-        super(XLNetEncoder, self).__init__()
-        self.xlnet = XLNetModel.from_pretrained(
-            model_shortcut_name,
-            cache_dir=os.path.join(pretrain_path, model_shortcut_name)
-        )
-        self.xlnet_tokenizer = XLNetTokenizer.from_pretrained(
-            model_shortcut_name,
-            cache_dir=os.path.join(pretrain_path, model_shortcut_name)
-        )
-        self.max_length = max_length
-    
-    def forward(self, tokens, mask):
-        """XLNet encoder forward.
-
-        Args:
-            tokens: torch.Tensor, [-1, max_length]
-            mask: torch.Tensor, [-1, max_length]
-            
-        Returns:
-            sentence_embedding: torch.Tensor, [-1, hidden_size]"""
-        # last_hidden_state: [-1, max_length, hidden_size]
-        last_hidden_state = self.xlnet(tokens, attention_mask=mask)
-        return last_hidden_state[0][:, -1, :]  # The last hidden-state of <CLS>
-
-    def tokenize(self, text):
-        ids = self.xlnet_tokenizer.encode(text, add_special_tokens=True,
-                                          max_length=self.max_length)
-        # attention mask: 1 for tokens that are NOT MASKED, 0 for MASKED tokens.
-        mask = [1] * len(ids)
-        # Padding
-        while len(ids) < self.max_length:
-            ids.append(0)
-            mask.append(0)
-        # truncation
-        ids = ids[:self.max_length]
-        mask = mask[:self.max_length]
-        return ids, mask
-
-
-class ALBERTEncoder(nn.Module):
-    """Encoder indices of sentences in ALBERT last hidden states."""
-    def __init__(self, model_shortcut_name, pretrain_path, max_length):
-        super(ALBERTEncoder, self).__init__()
-        self.albert = AlbertModel.from_pretrained(
-            model_shortcut_name,
-            cache_dir=os.path.join(pretrain_path, model_shortcut_name)
-        )
-        self.albert_tokenizer = AlbertTokenizer.from_pretrained(
-            model_shortcut_name,
-            cache_dir=os.path.join(pretrain_path, model_shortcut_name)
-        )
-        self.max_length = max_length
-    
-    def forward(self, tokens, mask):
-        """ALBERT encoder forward.
-
-        Args:
-            tokens: torch.Tensor, [-1, max_length]
-            mask: torch.Tensor, [-1, max_length]
-            
-        Returns:
-            sentence_embedding: torch.Tensor, [-1, hidden_size]"""
-        # last_hidden_state: [-1, max_length, hidden_size]
-        last_hidden_state = self.albert(tokens, attention_mask=mask)
-        return last_hidden_state[0][:, 0, :]  # The last hidden-state of <CLS>
-
-    def tokenize(self, text):
-        ids = self.albert_tokenizer.encode(text, add_special_tokens=True,
-                                           max_length=self.max_length)
-        # attention mask: 1 for tokens that are NOT MASKED, 0 for MASKED tokens.
-        mask = [1] * len(ids)
-        # Padding
-        while len(ids) < self.max_length:
-            ids.append(0)
-            mask.append(0)
-        # truncation
-        ids = ids[:self.max_length]
-        mask = mask[:self.max_length]
-        return ids, mask
-
-
-class RoBERTaEncoder(nn.Module):
-    """Encoder indices of sentences in RoBERTa last hidden states."""
-    def __init__(self, model_shortcut_name, pretrain_path, max_length):
-        super(RoBERTaEncoder, self).__init__()
-        self.roberta = RobertaModel.from_pretrained(
-            model_shortcut_name,
-            cache_dir=os.path.join(pretrain_path, model_shortcut_name)
-        )
-        self.roberta_tokenizer = RobertaTokenizer.from_pretrained(
-            model_shortcut_name,
-            cache_dir=os.path.join(pretrain_path, model_shortcut_name)
-        )
-        self.max_length = max_length
-    
-    def forward(self, tokens, mask):
-        """RoBERTa encoder forward.
-
-        Args:
-            inputs: dict. {"tokens": [-1, max_length], "mask": [-1, max_length]}
-            
-        Returns:
-            sentence_embedding: torch.Tensor. [-1, hidden_size]"""
-        # last_hidden_state: [-1, max_length, hidden_size]
-        last_hidden_state = self.roberta(tokens, attention_mask=mask)
-        return last_hidden_state[0][:, 0, :]  # The last hidden-state of <CLS>
-
-    def tokenize(self, text):
-        ids = self.roberta_tokenizer.encode(text, add_special_tokens=True,
-                                            max_length=self.max_length)
         # attention mask: 1 for tokens that are NOT MASKED, 0 for MASKED tokens.
         mask = [1] * len(ids)
         # Padding

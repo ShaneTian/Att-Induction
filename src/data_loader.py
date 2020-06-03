@@ -65,11 +65,6 @@ class ARSCTrainDataset(data.Dataset):
                     query.append(indices)
                     query_mask.append(mask)
             query_label += [class_idx] * current_Q
-        # print("S:", support)
-        # print("SM:", support_mask)
-        # print("Q:", query)
-        # print("QM:", query_mask)
-        # print("L:", query_label)
         return (torch.tensor(support, dtype=torch.long),
                 torch.tensor(support_mask, dtype=torch.long),
                 torch.tensor(query, dtype=torch.long),
@@ -164,7 +159,6 @@ def get_ARSC_data_loader(path, name, tokenizer, N, K, Q, batch_size,
         dataset,
         batch_size=batch_size,
         num_workers=num_workers,
-        # collate_fn=collate_fn,
         sampler=sampler
     )
     return iter(data_loader)

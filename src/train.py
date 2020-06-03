@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import AdamW, get_linear_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
 
 from data_loader import get_ARSC_data_loader, get_general_data_loader
-from encoder_module import AttBiLSTMEncoder, BERTEncoder, XLNetEncoder, ALBERTEncoder, RoBERTaEncoder
+from encoder_module import AttBiLSTMEncoder, BERTEncoder
 from relation_module import NeuralTensorNetwork, BiLinear, Linear, L2Distance, CosineDistance
 from att_induction import AttentionInductionNetwork
 from induction import InductionNetwork
@@ -20,36 +20,33 @@ from relation import RelationNetwork
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser("Train or test a FSL model.")
     parser.add_argument("--train_data", default=None, type=str,
                         help="File name of training data.")
     parser.add_argument("--val_data", default=None, type=str,
                         help="File name of validation data.")
     parser.add_argument("--test_data", action="append", type=str,
                         help="File names of testing data.")
-    parser.add_argument("-N", default=2, type=int, help="N way")
+    parser.add_argument("-N", default=5, type=int, help="N way")
     parser.add_argument("-K", default=5, type=int, help="K shot.")
-    parser.add_argument("-Q", default=5, type=int,
+    parser.add_argument("-Q", default=10, type=int,
                         help="Number of query instances per class.")
     parser.add_argument("--encoder", default="bert-base", type=str,
-                        choices=("att-bi-lstm", "bert-base", "albert-base", "albert-large", "albert-xlarge", "xlnet-base", "roberta-base"),
-                        help="Encoder: 'att-bi-lstm', 'bert-base', 'albert-base', 'albert-large', 'albert-xlarge', 'xlnet-base' or 'roberta-base'.")
+                        choices=("att-bi-lstm", "att-bi-lstm-zh","bert-base", "bert-chinese"),
+                        help="Encoder: 'att-bi-lstm', 'att-bi-lstm-zh', 'bert-base' or 'bert-chinese'.")
     parser.add_argument("--model", default="att-induction", type=str,
                         choices=("att-induction", "induction", "matching", "prototype", "relation"),
                         help="Models: 'att-induction', 'induction', 'matching', 'prototype' or 'relation'.")
-    # parser.add_argument("--relation", default="ntn", type=str,
-    #                     choices=("ntn", "bilinear", "linear", "proto"),
-    #                     help="Relation: 'ntn', 'bilinear', 'linear' or 'proto'.")
     parser.add_argument("--optim", default="adamw", type=str,
                         choices=("sgd", "adam", "adamw"),
                         help="Optimizer: 'sgd', 'adam' or 'adamw'.")
-    parser.add_argument("--train_episodes", default=50000, type=int,
+    parser.add_argument("--train_episodes", default=5000, type=int,
                         help="Number of training episodes. (train_episodes*=batch_size)")
-    parser.add_argument("--val_episodes", default=1000, type=int,
+    parser.add_argument("--val_episodes", default=3000, type=int,
                         help="Number of validation episodes. (val_episodes*=batch_size)")
-    parser.add_argument("--val_steps", default=1000, type=int,
+    parser.add_argument("--val_steps", default=100, type=int,
                         help="Validate after x train_episodes.")
-    parser.add_argument("--test_episodes", default=1000, type=int,
+    parser.add_argument("--test_episodes", default=5000, type=int,
                         help="Number of testing episodes. test_episodes*=batch_size")
     parser.add_argument("--max_length", default=512, type=int,
                         help="Maximum length of sentences.")
@@ -61,12 +58,12 @@ def main():
     parser.add_argument("--n_heads", default=None, type=int,
                         help="Number of heads in self-attention.")
     parser.add_argument("--dropout", default=None, type=float, help="Dropout rate.")
-    parser.add_argument("-H", "--relation_size", default=100, type=int,
+    parser.add_argument("-H", "--relation_size", default=130, type=int,
                         help="Size of neural tensor network.")
-    parser.add_argument("-B", "--batch_size", default=1, type=int, help="Batch size.")
-    parser.add_argument("--grad_steps", default=32, type=int,
+    parser.add_argument("-B", "--batch_size", default=4, type=int, help="Batch size.")
+    parser.add_argument("--grad_steps", default=1, type=int,
                         help="Accumulate gradient update every x iterations.")
-    parser.add_argument("--lr", default=5e-5, type=float, help="Learning rate.")
+    parser.add_argument("--lr", default=1e-5, type=float, help="Learning rate.")
     parser.add_argument("--warmup", default=0.06, type=float, help="Warmup ratio.")
     parser.add_argument("--weight_decay", default=0.01, type=float, help="Weight decay.")
     parser.add_argument("--pretrain_path", default="../resource/pretrain/",
@@ -82,6 +79,8 @@ def main():
         data_name = "20news"
     elif "HuffPost" in args.train_data:
         data_name = "HuffPost"
+    elif "M" == args.train_data[0]:
+        data_name = "controversial_issues"
     else:
         raise ValueError
 
@@ -92,7 +91,7 @@ def main():
                                 + args.model + f"-iters{args.induction_iters}-nheads{args.n_heads}"
                                 f"-dropout{args.dropout}+" + f"-H{args.relation_size}")
         prefix = "-".join(str(datetime.datetime.now())[:-10].split()) + (f"+episodes{args.train_episodes}"
-            f"+B{args.batch_size}+grad{args.grad_steps}+lr{args.lr}"
+            f"+N{args.N}+K{args.K}+Q{args.Q}+B{args.batch_size}+grad{args.grad_steps}+lr{args.lr}"
             f"+warmup{args.warmup}+weightdecay{args.weight_decay}")
         output_path = os.path.join(log_path, prefix)
         save_checkpoint = os.path.join(output_path, "checkpoint.pt")
@@ -119,34 +118,20 @@ def main():
         current_device = torch.device("cpu")
     
     if args.encoder == "att-bi-lstm":
-        encoder = AttBiLSTMEncoder(args.pretrain_path, args.max_length, args.hidden_size, args.att_dim)
+        encoder = AttBiLSTMEncoder(args.pretrain_path, args.max_length,
+                                   args.hidden_size, args.att_dim)
+        args.hidden_size *= 2
+    elif args.encoder == "att-bi-lstm-zh":
+        encoder = AttBiLSTMEncoder(args.pretrain_path, args.max_length,
+                                   args.hidden_size, args.att_dim, is_zh=True)
         args.hidden_size *= 2
     elif args.encoder == "bert-base":
         encoder = BERTEncoder("bert-base-uncased", args.pretrain_path, args.max_length)
-    elif args.encoder == "albert-base":
-        encoder = ALBERTEncoder("albert-base-v2", args.pretrain_path, args.max_length)
-    elif args.encoder == "albert-large":
-        encoder = ALBERTEncoder("albert-large-v2", args.pretrain_path, args.max_length)
-    elif args.encoder == "albert-xlarge":
-        encoder = ALBERTEncoder("albert-xlarge-v2", args.pretrain_path, args.max_length)
-    elif args.encoder == "xlnet-base":
-        encoder = XLNetEncoder("xlnet-base-cased", args.pretrain_path, args.max_length)
-    elif args.encoder == "roberta-base":
-        encoder = RoBERTaEncoder("roberta-base", args.pretrain_path, args.max_length)
+    elif args.encoder == "bert-chinese":
+        encoder = BERTEncoder("bert-base-chinese", args.pretrain_path, args.max_length)
     else:
         raise NotImplementedError
     tokenizer = encoder.tokenize
-
-    # if args.relation == "ntn":
-    #     relation = NeuralTensorNetwork(args.hidden_size, args.relation_size)
-    # elif args.relation == "bilinear":
-    #     relation = BiLinear(args.hidden_size, args.relation_size)
-    # elif args.relation == "linear":
-    #     relation = Linear(args.hidden_size, args.relation_size)
-    # elif args.relation == "proto":
-    #     relation = PrototypeNetwork()
-    # else:
-    #     raise NotImplementedError
 
     if args.model == "att-induction":
         relation_module = NeuralTensorNetwork(args.hidden_size, args.relation_size)
@@ -217,10 +202,12 @@ def main():
         test_data = args.test_data[0]
 
     if not args.only_test:
-        best_val_acc = train(data_name, args.train_data, val_data, tokenizer, model, args.batch_size,
+        best_val_acc = train(
+            data_name, args.train_data, val_data, tokenizer, model, args.batch_size,
             args.N, args.K, args.Q, optimizer, args.train_episodes, args.val_episodes,
             args.val_steps, args.grad_steps, args.lr, args.warmup, args.weight_decay,
-            writer, save_checkpoint, cuda=current_cuda, fp16=False)
+            writer, save_checkpoint, cuda=current_cuda, fp16=False
+        )
         logging.info("Best val mean acc: {:2.4f}".format(best_val_acc))
         logging.info("Best model: {}".format(save_checkpoint))
     
@@ -243,11 +230,17 @@ def train(data_name, train_data, val_data, tokenizer, model, B, N, K, Q, optimiz
           train_episodes, val_episodes, val_steps, grad_steps, lr,
           warmup, weight_decay, writer, save_checkpoint, cuda=False, fp16=False):
     if data_name == "ARSC":
-        train_data_loader = get_ARSC_data_loader("../data/ARSC/", train_data, tokenizer, N, K, Q, B)
+        train_data_loader = get_ARSC_data_loader("../data/ARSC/", train_data,
+                                                 tokenizer, N, K, Q, B)
     elif data_name == "20news":
-        train_data_loader = get_general_data_loader("../data/20news/", train_data, tokenizer, N, K, Q, B)
+        train_data_loader = get_general_data_loader("../data/20news/", train_data,
+                                                    tokenizer, N, K, Q, B)
     elif data_name == "HuffPost":
-        train_data_loader = get_general_data_loader("../data/HuffPost/", train_data, tokenizer, N, K, Q, B)
+        train_data_loader = get_general_data_loader("../data/HuffPost/", train_data,
+                                                    tokenizer, N, K, Q, B)
+    elif data_name == "controversial_issues":
+        train_data_loader = get_general_data_loader("../data/controversial_issues/",
+                                                    train_data, tokenizer, N, K, Q, B)
     else:
         raise NotImplementedError
 
@@ -344,9 +337,6 @@ def train(data_name, train_data, val_data, tokenizer, model, B, N, K, Q, optimiz
         """
 
         if episode % grad_steps == 0:
-            # Log train loss and acc.
-            writer.add_scalar("Loss/train", total_loss / max(1, total_samples), episode)
-            writer.add_scalar("Accuracy/train", total_acc_mean / max(1, total_samples), episode)
             # Update params
             optimizer.step()
             scheduler.step()
@@ -357,16 +347,20 @@ def train(data_name, train_data, val_data, tokenizer, model, B, N, K, Q, optimiz
         total_samples += 1
         logging.info("[Train episode: {:6d}/{:6d}] ==> Loss: {:2.4f} Mean acc: {:2.4f}"
                      .format(episode, train_episodes,
-                             100 * total_loss / total_samples,
+                             total_loss / total_samples,
                              100 * total_acc_mean / total_samples))
         
         if val_data is not None and episode % val_steps == 0:
             if data_name == "ARSC":
                 eval_loss, eval_acc = eval_ARSC(val_data, tokenizer, model, 1, N, K, Q, cuda=cuda)
             else:
-                eval_loss, eval_acc = eval(data_name, val_data, tokenizer, model, 1, N, K, Q, val_episodes, cuda=cuda)
+                eval_loss, eval_acc = eval(data_name, val_data, tokenizer, model,
+                                           1, N, K, Q, val_episodes, cuda=cuda)
             writer.add_scalar("Loss/val", eval_loss, episode)
             writer.add_scalar("Accuracy/val", eval_acc, episode)
+            # Log train loss and acc.
+            writer.add_scalar("Loss/train", total_loss / max(1, total_samples), episode)
+            writer.add_scalar("Accuracy/train", total_acc_mean / max(1, total_samples), episode)
             model.train()  # Reset model to train mode.
             if eval_acc > best_val_acc:
                 # Save model
@@ -377,12 +371,12 @@ def train(data_name, train_data, val_data, tokenizer, model, B, N, K, Q, optimiz
             total_samples = 0
             total_loss = 0.0
             total_acc_mean = 0.0
-    writer.flush()
     writer.close()
     return best_val_acc
 
 
-def eval_ARSC(val_data, tokenizer, model, B, N, K, Q, load_checkpoint=None, is_test=False, cuda=False):
+def eval_ARSC(val_data, tokenizer, model, B, N, K, Q,
+              load_checkpoint=None, is_test=False, cuda=False):
     if load_checkpoint is not None:
         if cuda:
             model.load_state_dict(torch.load(load_checkpoint))
@@ -425,20 +419,21 @@ def eval_ARSC(val_data, tokenizer, model, B, N, K, Q, load_checkpoint=None, is_t
 
                 logging.info("[{} episode: {:3d}] ==> Loss: {:2.4f} Mean acc: {:2.4f}"
                             .format(out_mark, episode + 1,
-                                    100 * total_loss / (episode + 1),
+                                    total_loss / (episode + 1),
                                     100 * total_acc_mean / (episode + 1)))
                 total_samples += 1
         loss_mean, acc_mean = total_loss / total_samples, total_acc_mean / total_samples
-        results[each_data] = {"loss": 100 * loss_mean, "acc": 100 * acc_mean}
+        results[each_data] = {"loss": loss_mean, "acc": 100 * acc_mean}
         logging.info("{} results of '{}': ==> Loss: {:2.4f} Mean acc: {:2.4f}"
-                     .format(out_mark, each_data, 100 * loss_mean, 100 * acc_mean))
-        final_loss += 100 * loss_mean
+                     .format(out_mark, each_data, loss_mean, 100 * acc_mean))
+        final_loss += loss_mean
         final_acc += 100 * acc_mean
     logging.info("Final {} results: {}".format(out_mark, results))
     return final_loss / len(val_data), final_acc / len(val_data)
 
 
-def eval(data_name, val_data, tokenizer, model, B, N, K, Q, val_episodes, load_checkpoint=None, is_test=False, cuda=False):
+def eval(data_name, val_data, tokenizer, model, B, N, K, Q, val_episodes,
+         load_checkpoint=None, is_test=False, cuda=False):
     if load_checkpoint is not None:
         if cuda:
             model.load_state_dict(torch.load(load_checkpoint))
@@ -453,6 +448,9 @@ def eval(data_name, val_data, tokenizer, model, B, N, K, Q, val_episodes, load_c
         data_loader = get_general_data_loader("../data/20news/", val_data, tokenizer, N, K, Q, B)
     elif data_name == "HuffPost":
         data_loader = get_general_data_loader("../data/HuffPost/", val_data, tokenizer, N, K, Q, B)
+    elif data_name == "controversial_issues":
+        data_loader = get_general_data_loader("../data/controversial_issues/",
+                                              val_data, tokenizer, N, K, Q, B)
     else:
         raise NotImplementedError
 
@@ -478,9 +476,9 @@ def eval(data_name, val_data, tokenizer, model, B, N, K, Q, val_episodes, load_c
 
             logging.info("[{} episode: {:5d}/{:5d}] ==> Loss: {:2.4f} Mean acc: {:2.4f}"
                         .format(out_mark, episode, val_episodes,
-                                100 * total_loss / episode,
+                                total_loss / episode,
                                 100 * total_acc_mean / episode))
-    loss_mean, acc_mean = 100 * total_loss / val_episodes, 100 * total_acc_mean / val_episodes
+    loss_mean, acc_mean = total_loss / val_episodes, 100 * total_acc_mean / val_episodes
     return loss_mean, acc_mean
 
 

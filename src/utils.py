@@ -2,6 +2,8 @@ import os
 import json
 import numpy as np
 import re
+import pandas as pd
+import random
 
 
 def ARSC_data_preprocessing(original_path, target_path):
@@ -80,23 +82,7 @@ def news20_data_preprocessing(original_file, target_path):
             'soc.religion.christian': 19,
         }
 
-    """
-    train_classes = []
-    for key in label_dict.keys():
-        if key[:key.find('.')] in ['sci', 'rec']:
-            train_classes.append(label_dict[key])
-
-    val_classes = []
-    for key in label_dict.keys():
-        if key[:key.find('.')] in ['comp']:
-            val_classes.append(label_dict[key])
-
-    test_classes = []
-    for key in label_dict.keys():
-        if key[:key.find('.')] not in ['comp', 'sci', 'rec']:
-            test_classes.append(label_dict[key])
-    """
-    # New split
+    # Split
     train_classes, val_classes, test_classes = [], [], []
     for key in label_dict.keys():
         if key in [
@@ -120,8 +106,7 @@ def news20_data_preprocessing(original_file, target_path):
             train_classes.append(label_dict[key])
     
     print(train_classes, val_classes, test_classes)
-    # [1, 5, 10, 11, 13, 14, 16, 18] [4, 6, 7, 12, 17] [0, 2, 3, 8, 9, 15, 19]
-    # New: [3, 4, 5, 6, 7, 9, 10, 13, 16] [8, 11, 12, 14, 15] [0, 1, 2, 17, 18, 19]
+    # [3, 4, 5, 6, 7, 9, 10, 13, 16] [8, 11, 12, 14, 15] [0, 1, 2, 17, 18, 19]
 
     train_data, val_data, test_data = dict(), dict(), dict()
     with open(original_file, "r") as raw_file:
@@ -147,42 +132,11 @@ def news20_data_preprocessing(original_file, target_path):
     json.dump(test_data, open(os.path.join(target_path, "20news_test_new.json"), "w"))
 
 
-news20_data_preprocessing("../data/data/20news.json", "../data/20news/")
-
-
-def glove_preprocessing(word_vec_file, output_path):
-    token2idx = {}
-    word_vec = []
-    with open(word_vec_file, "r") as f:
-        line = f.readline()
-        index = 0
-        while line:
-            line = line.strip().split()
-            token, vec = line[0], line[1:]
-            vec = list(map(float, vec))
-            if token in token2idx:
-                raise ValueError("{} is existed!".format(token))
-            else:
-                token2idx[token] = index
-            word_vec.append(vec)
-            index += 1
-            line = f.readline()
-    word_vec = np.array(word_vec)
-    assert len(token2idx) == np.shape(word_vec)[0], "Length is not same!"
-    json.dump(token2idx, open(os.path.join(output_path, "token2idx.json"), "w"))
-    np.save(os.path.join(output_path, "word_vec.npy"), word_vec)
-
-
-# glove_preprocessing("../data/glove.6B/glove.6B.300d.txt", "../resource/pretrain/att-bi-lstm/")
+# news20_data_preprocessing("../data/data/20news.json", "../data/20news/")
 
 
 def HuffPost_data_preprocessing(original_file, target_path):
-    # Old split method!
-    # train_classes = list(range(27))  # 0-26
-    # val_classes = list(range(27, 33))  # 27-32
-    # test_classes = list(range(33, 41))  # 33-40
-
-    # New split method!
+    # Split
     split_dict = {"train": [[0, "POLITICS"], [1, "WELLNESS"], [2, "ENTERTAINMENT"], [3, "TRAVEL"], [4, "STYLE & BEAUTY"], [5, "PARENTING"], [7, "QUEER VOICES"], [9, "BUSINESS"], [11, "SPORTS"], [12, "BLACK VOICES"], [13, "HOME & LIVING"], [14, "PARENTS"], [15, "THE WORLDPOST"], [16, "WEDDINGS"], [17, "WOMEN"], [18, "IMPACT"], [20, "CRIME"], [21, "MEDIA"], [22, "WEIRD NEWS"], [23, "GREEN"], [25, "RELIGION"], [27, "SCIENCE"], [33, "FIFTY"], [34, "GOOD NEWS"], [35, "ARTS & CULTURE"], [37, "COLLEGE"], [38, "LATINO VOICES"]], "val": [[8, "FOOD & DRINK"], [10, "COMEDY"], [28, "WORLD NEWS"], [29, "TASTE"], [30, "TECH"], [32, "ARTS"]], "test": [[6, "HEALTHY LIVING"], [19, "DIVORCE"], [24, "WORLDPOST"], [26, "STYLE"], [31, "MONEY"], [36, "ENVIRONMENT"], [39, "CULTURE & ARTS"], [40, "EDUCATION"]]}
     train_classes = [idx_name[0] for idx_name in split_dict["train"]]
     val_classes = [idx_name[0] for idx_name in split_dict["val"]]
@@ -210,3 +164,118 @@ def HuffPost_data_preprocessing(original_file, target_path):
 
 
 # HuffPost_data_preprocessing("../data/data/huffpost.json", "../data/HuffPost/")
+
+
+def glove_preprocessing(word_vec_file, output_path):
+    """Transforming English word embedding txt into .npy embedding matrix and JSON index file."""
+    token2idx = {}
+    word_vec = []
+    with open(word_vec_file, "r") as f:
+        line = f.readline()
+        index = 0
+        while line:
+            line = line.strip().split()
+            token, vec = line[0], line[1:]
+            vec = list(map(float, vec))
+            if token in token2idx:
+                raise ValueError("{} is existed!".format(token))
+            else:
+                token2idx[token] = index
+            word_vec.append(vec)
+            index += 1
+            line = f.readline()
+    word_vec = np.array(word_vec)
+    assert len(token2idx) == np.shape(word_vec)[0], "Length is not same!"
+    json.dump(token2idx, open(os.path.join(output_path, "token2idx.json"), "w"))
+    np.save(os.path.join(output_path, "word_vec.npy"), word_vec)
+
+
+# glove_preprocessing("../data/glove.6B/glove.6B.300d.txt", "../resource/pretrain/att-bi-lstm/")
+
+
+def chinese_word_vec_preprocessing(word_vec_file, output_path):
+    """Transforming Chinese word embedding txt into .npy embedding matrix and JSON index file."""
+    token2idx = {}
+    word_vec = []
+    with open(word_vec_file, "r") as f:
+        line = f.readline()  # 1292607 300
+        line = f.readline()
+        index = 0
+        while line:
+            line = line.rstrip().split(" ")
+            # print(line)
+            token, vec = line[0], line[1:]
+            vec = list(map(float, vec))
+            if token in token2idx:
+                print("{} is existed!".format(token))
+                line = f.readline()
+                continue
+            else:
+                token2idx[token] = index
+            word_vec.append(vec)
+            index += 1
+            line = f.readline()
+            if index % 100000 == 0:
+                print("{:d} done!".format(index))
+    word_vec = np.array(word_vec)
+    assert len(token2idx) == np.shape(word_vec)[0], "Length is not same!"
+    json.dump(token2idx, open(os.path.join(output_path, "token2idx.json"), "w"))
+    np.save(os.path.join(output_path, "word_vec.npy"), word_vec)
+
+
+# chinese_word_vec_preprocessing("../data/chinese_word_vec/sgns.merge.word", "../resource/pretrain/att-bi-lstm-zh/")
+
+
+"""
+# real-world Controversial Issues dataset
+def controversial_issues_data_preprocessing(original_file, target_path):
+    data = pd.read_excel(original_file, usecols="A,C,E,F")
+    data = data[(data["焦点类别"] == "G4") & (data["焦点组id"] != "delete") & (data["焦点组id"] != "other")]
+    data = data[["焦点组id", "焦点内容"]]
+    # print(data)
+    length = data.shape[0]
+    texts, labels = [], []
+    for i in range(length):
+        label, text = data.iloc[i][0], data.iloc[i][1]
+        texts.append(text)
+        labels.append(label)
+    
+    # Filter label
+    label2idx = {}
+    count_each_label = {}  # Number of samples each label
+    for each_label in labels:
+        count_each_label[each_label] = count_each_label.setdefault(each_label, 0) + 1
+    texts_new, labels_new = [], []  # After filter
+    for each_text, each_label in zip(texts, labels):
+        if count_each_label[each_label] > 6:  # Threshold
+            texts_new.append(each_text)
+            labels_new.append(each_label)
+            if each_label not in label2idx:
+                label2idx[each_label] = len(label2idx)
+    # print(label2idx)
+
+    label_unique = list(set(labels_new))
+    random.shuffle(label_unique)
+    # print(label_unique, len(label_unique))
+    # M6.17: Split 111 classes to 75 train, 16 val, 20 test
+    # M9.30.349: Split 61 classes to 36 train, 11 val, 14 test
+    train_classes, val_classes, test_classes = label_unique[:36], label_unique[36:47], label_unique[47:]
+
+    train_data, val_data, test_data = dict(), dict(), dict()
+    for each_text, each_label in zip(texts_new, labels_new):
+        if each_label in train_classes:
+            train_data.setdefault(label2idx[each_label], []).append(each_text)
+        elif each_label in val_classes:
+            val_data.setdefault(label2idx[each_label], []).append(each_text)
+        elif each_label in test_classes:
+            test_data.setdefault(label2idx[each_label], []).append(each_text)
+        else:
+            raise ValueError("Invalid label {}".format(each_label))
+    
+    json.dump(train_data, open(os.path.join(target_path, "M9.30.349_train.json"), "w"), ensure_ascii=False)
+    json.dump(val_data, open(os.path.join(target_path, "M9.30.349_val.json"), "w"), ensure_ascii=False)
+    json.dump(test_data, open(os.path.join(target_path, "M9.30.349_test.json"), "w"), ensure_ascii=False)
+
+
+controversial_issues_data_preprocessing("../data/M9.30.349.xlsx", "../data/controversial_issues/")
+"""

@@ -22,7 +22,7 @@ class PrototypeNetwork(nn.Module):
         return torch.mean((predict_label.view(-1) == label.view(-1)).type(torch.FloatTensor))
 
     def forward(self, support, support_mask, query, query_mask):
-        """Prototype Network forward.
+        """Prototype Networks forward.
 
         Args:
             support: torch.Tensor, [-1, N, K, max_length]

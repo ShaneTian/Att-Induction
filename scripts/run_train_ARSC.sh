@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=0 python3 -u ./train.py \
     -H 130 \
     -B 1 \
     --grad_steps 32 \
-    --lr 5e-5 \
+    --lr 7e-5 \
     --warmup 0.06 \
     --weight_decay 0.01 \
     --pretrain_path ../resource/pretrain/ \

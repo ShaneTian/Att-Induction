@@ -20,11 +20,8 @@ class AttentionInductionNetwork(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(self.hidden_size)
         # Dynamic routing: Linear
-        # self.fc_induction = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        # 新transform
         self.fc_induction = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
 
-        # self.CE_loss = nn.CrossEntropyLoss(reduction="mean")
         self.__init_params()
 
     def __init_params(self):
@@ -46,17 +43,12 @@ class AttentionInductionNetwork(nn.Module):
         return F.mse_loss(predict_proba.view(-1, N),
                           label_one_hot.view(-1, N).type(torch.float),
                           reduction="sum")
-    
-    # def loss(self, predict_proba, label):
-        # CE loss
-    #     N = predict_proba.size(-1)
-    #     return self.CE_loss(predict_proba.view(-1, N), label.view(-1))
-    
+        
     def mean_accuracy(self, predict_label, label):
         return torch.mean((predict_label.view(-1) == label.view(-1)).type(torch.FloatTensor))
 
     def forward(self, support, support_mask, query, query_mask):
-        """Attention Capsule Network forward.
+        """Att-Induction Networks forward.
 
         Args:
             support: torch.Tensor, [-1, N, K, max_length]
@@ -93,16 +85,13 @@ class AttentionInductionNetwork(nn.Module):
         att_score = att_score[0].view(-1, totalQ, N, self.hidden_size)  # [B, totalQ, N, D]
         att_score = att_score.unsqueeze(3)  # [B, totalQ, N, 1, D]
 
-        # 2.2 Attention capsule
-        # support_hat = self.fc_induction(support).unsqueeze(1).expand(-1, totalQ, -1, -1, -1)  # [B, totalQ, N, K, D]
-        # 新transform
+        # 2.2 Attention-based dynamic routing
         support_hat = self.__squash(self.fc_induction(support).unsqueeze(1).expand(-1, totalQ, -1, -1, -1))  # [B, totalQ, N, K, D]
         b = torch.zeros(B, totalQ, N, K, 1, device=self.current_device, requires_grad=False)  # [B, totalQ, N, K, 1]
         for _ in range(self.induction_iters):
             d = F.softmax(b, dim=3)  # [B, totalQ, N, K, 1]
             c_hat = torch.mul(d, support_hat).sum(3, keepdims=True)  # [B, totalQ, N, 1, D]
             c = self.__squash(c_hat)  # [B, totalQ, N, 1, D]
-            # f1 = tanh or relu
             b = b + torch.mul(att_score, torch.tanh(torch.mul(support_hat, c))).sum(-1, keepdims=True)  # [B, totalQ, N, K, 1]
         
         # 3. Relation

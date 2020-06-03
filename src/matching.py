@@ -22,7 +22,7 @@ class MatchingNetwork(nn.Module):
         return torch.mean((predict_label.view(-1) == label.view(-1)).type(torch.FloatTensor))
 
     def forward(self, support, support_mask, query, query_mask):
-        """Matching Network forward.
+        """Matching Networks forward.
 
         Args:
             support: torch.Tensor, [-1, N, K, max_length]

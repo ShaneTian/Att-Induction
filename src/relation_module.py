@@ -34,6 +34,7 @@ class NeuralTensorNetwork(nn.Module):
 
 
 class BiLinear(nn.Module):
+    """The relation module used in Induction Networks."""
     def __init__(self, hidden_size, relation_size):
         super(BiLinear, self).__init__()
         self.bilinear = nn.Bilinear(hidden_size, hidden_size, relation_size, bias=False)

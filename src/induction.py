@@ -15,11 +15,8 @@ class InductionNetwork(nn.Module):
         self.current_device = current_device
 
         # Dynamic routing: Linear
-        # self.fc_induction = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        # 新transform
         self.fc_induction = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
 
-        # self.CE_loss = nn.CrossEntropyLoss(reduction="mean")
         self.__init_params()
 
     def __init_params(self):
@@ -40,17 +37,12 @@ class InductionNetwork(nn.Module):
         return F.mse_loss(predict_proba.view(-1, N),
                           label_one_hot.view(-1, N).type(torch.float),
                           reduction="sum")
-    
-    # def loss(self, predict_proba, label):
-        # CE loss
-    #     N = predict_proba.size(-1)
-    #     return self.CE_loss(predict_proba.view(-1, N), label.view(-1))
-    
+        
     def mean_accuracy(self, predict_label, label):
         return torch.mean((predict_label.view(-1) == label.view(-1)).type(torch.FloatTensor))
 
     def forward(self, support, support_mask, query, query_mask):
-        """Capsule Network forward.
+        """Induction Networks forward.
 
         Args:
             support: torch.Tensor, [-1, N, K, max_length]
@@ -76,8 +68,6 @@ class InductionNetwork(nn.Module):
         query = query.view(-1, totalQ, self.hidden_size)  # [B, totalQ, D]
 
         # 2. Induction
-        # support_hat = self.fc_induction(support)  # [B, N, K, D]
-        # 新transform
         support_hat = self.__squash(self.fc_induction(support))  # [B, N, K, D]
         b = torch.zeros(B, N, K, 1, device=self.current_device, requires_grad=False)  # [B, N, K, 1]
         for _ in range(self.induction_iters):

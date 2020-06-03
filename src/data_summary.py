@@ -12,6 +12,7 @@ def count_data(path, is_ARSC=False):
     tokens_len = {}  # {len1: count1, len2: count2, ...}
     examples_per_cls = {}  # {class1: count1, class2: count2, ...}
 
+    # Tokenizer
     bert_tokenizer = BertTokenizer.from_pretrained(
         "bert-base-uncased",
         cache_dir=os.path.join("../resource/pretrain/", "bert-base-uncased")
@@ -91,8 +92,8 @@ def count_data(path, is_ARSC=False):
         tokens_len_accumulation[i] += tokens_len_accumulation[i - 1]  # Accumulation %
     
     plt.figure(figsize=(15, 10))
-    x_axis_max = 1000
-    x_axis_period = 50
+    x_axis_max = 80
+    x_axis_period = 10
     # Background grid
     for i in range(1, 10):
         plt.hlines(i / 10, 0, x_axis_max, color="gray", linestyle="dashed", linewidths=0.1)
@@ -107,7 +108,7 @@ def count_data(path, is_ARSC=False):
     plt.xlabel("Number of tokens per example")
     plt.ylabel("Percentage")
     plt.title("Accumulated the number of tokens per example")
-    plt.savefig("../log/ARSC_accumulated_tokens_per_example.pdf")
+    plt.savefig("../log/HuffPost_accumulated_tokens_per_example.pdf")
 
 
-count_data("../temp/ARSC/")
+count_data("../temp/")
